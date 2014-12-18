@@ -1,0 +1,242 @@
+// Tiger.cup    -*- mode: Java -*-
+
+import ErrorMsg.Pos;
+import Util.Lst;
+
+action code
+{:
+    static ErrorMsg.Pos pos(int left, int right)
+    {
+        return new ErrorMsg.Pos(left, right);
+    }
+
+    static <A,B> Util.Pair<A,B> pair(A a, B b)
+    {
+        return new Util.Pair<A,B>(a,b);
+    }
+:};
+
+parser code
+{:
+    ErrorMsg.ErrorMsg errorMsg;
+
+    public void syntax_error(java_cup.runtime.Symbol current)
+    {
+        report_error("Syntax error", current);
+    }
+   
+    public void report_error(String message, java_cup.runtime.Symbol tok)
+    {
+        errorMsg.error(new ErrorMsg.Pos(tok.left, tok.right), message);
+    }
+    
+    public Parser(Lexer l, ErrorMsg.ErrorMsg err)
+    {
+        this(l);
+        errorMsg = err;
+    }
+:};
+
+terminal Integer       INTEGER;
+terminal String        STRING;
+terminal Symbol.Symbol ID;
+terminal               PLUS, MINUS, TIMES, DIV, UMINUS;
+terminal               EQ, NE, LT, LE, GT, GE;
+terminal               AND, OR;
+terminal               ASSIGN;
+terminal               LPAREN, RPAREN;
+terminal               LBRACK, RBRACK;
+terminal			   LKEY, RKEY;
+terminal               IF, THEN, ELSE;
+terminal               LET, IN, END;
+terminal               COLON, SEMICOLON, COMMA, DOT;
+terminal               VAR, FUNCTION, TYPE;
+terminal               NIL;
+terminal               ARRAY, OF;
+terminal			   FOR, TO, ENDFOR;
+terminal			   WHILE, DO, ENDWHILE;
+terminal			   BREAK;
+
+non terminal Exp                     exp;
+non terminal Var                     var;
+non terminal Lst<Exp>                expSeq;
+non terminal Lst<Exp>                expSeq2;
+non terminal Lst<Exp>                expSeqRest;
+non terminal Ty                      ty;
+non terminal NameTy                  constraint;
+non terminal VarDec                  varDec;
+non terminal FunctionDec             functionDec;
+non terminal Lst<FunctionDec>        functionDecs;
+non terminal TypeDec                 typeDec;
+non terminal Lst<TypeDec>            typeDecs;
+non terminal Lst<Dec>                begVarDecList;
+non terminal Lst<Dec>                begFunctionDecList;
+non terminal Lst<Dec>                begTypeDecList;
+non terminal Lst<Dec>                decList;
+non terminal NameTy                  namety;
+non terminal Field<NameTy>           field;
+non terminal Lst<Field<NameTy>>      fields;
+non terminal Lst<Field<NameTy>>      fieldsRest;
+non terminal Lst<Exp>				 loop1;					
+non terminal Lst<Exp>                expList;
+non terminal Lst<Exp>                expListRest;
+
+precedence left      OR;
+precedence left      AND;
+precedence nonassoc  EQ, NE, LT, LE, GT, GE;
+precedence left      PLUS, MINUS;
+precedence left      TIMES, DIV;
+precedence left      UMINUS;
+
+start with exp;
+
+exp ::=
+  NIL:x                                   {: RESULT = new NilExp(pos(xleft,xright)); :}
+| INTEGER:x                               {: RESULT = new NumExp(pos(xleft,xright), x); :}
+| STRING:x                                {: RESULT = new StringExp(pos(xleft,xright), x); :}
+| ID:t LBRACK exp:size RBRACK OF exp:init {: RESULT = new ArrayExp(pos(tleft,initright), new NameTy(pos(tleft,tright), t), size, init); :}
+| var:x                                   {: RESULT = new VarExp(pos(xleft,xright), x); :}
+| var:v ASSIGN exp:e                      {: RESULT = new AssignExp(pos(vleft,eright), v, e); :}
+| exp:x PLUS exp:y                        {: RESULT = new OpExp(pos(xleft,yright), x, y, Operator.PLUS); :}
+| exp:x MINUS exp:y                       {: RESULT = new OpExp(pos(xleft,yright), x, y, Operator.MINUS); :}
+| exp:x TIMES exp:y                       {: RESULT = new OpExp(pos(xleft,yright), x, y, Operator.TIMES); :}
+| exp:x DIV exp:y                         {: RESULT = new OpExp(pos(xleft,yright), x, y, Operator.DIV); :}
+| MINUS:o exp:x                           {: RESULT = new OpExp(pos(oleft,xright), new NumExp(pos(oleft,oright), 0), x, Operator.MINUS); :}  %prec UMINUS
+| exp:x EQ exp:y                          {: RESULT = new OpExp(pos(xleft,yright), x, y, Operator.EQ); :}
+| exp:x NE exp:y                          {: RESULT = new OpExp(pos(xleft,yright), x, y, Operator.NE); :}
+| exp:x LT exp:y                          {: RESULT = new OpExp(pos(xleft,yright), x, y, Operator.LT); :}
+| exp:x LE exp:y                          {: RESULT = new OpExp(pos(xleft,yright), x, y, Operator.LE); :}
+| exp:x GT exp:y                          {: RESULT = new OpExp(pos(xleft,yright), x, y, Operator.GT); :}
+| exp:x GE exp:y                          {: RESULT = new OpExp(pos(xleft,yright), x, y, Operator.GE); :}
+| exp:x AND exp:y                         {: RESULT = new IfExp(pos(xleft,yright), x, y, new NumExp(pos(-1,-1), 0)); :}
+| exp:x OR exp:y                          {: RESULT = new IfExp(pos(xleft,yright), x, new NumExp(pos(-1,-1), 1), y); :}
+| IF:IF exp:test THEN exp:a ELSE exp:b    {: RESULT = new IfExp(pos(IFleft,bright), test, a, b); :}
+| IF:IF exp:test THEN exp:a               {: RESULT = new IfExp(pos(IFleft,aright), test, a, null); :}
+| LET:L decList:ds IN expSeq:es END:E     {: RESULT = new LetExp(pos(Lleft,Eright), ds, new SeqExp(pos(esleft,esright), es)); :}
+| LPAREN:l expSeq2:xs RPAREN:r            {: RESULT = new SeqExp(pos(lleft,rright), xs); :}
+| LPAREN:l RPAREN:r                       {: RESULT = new SeqExp(pos(lleft,rright), new Lst<Exp>()); :}
+| LPAREN exp:x RPAREN                     {: RESULT = x; :}
+| FOR:FOR ID:id ASSIGN exp:init TO exp:test DO exp:a ENDFOR:E	 {: RESULT = new ForExp(pos(FORleft,Eright), id, init, test, a, false); :}
+| FOR:FOR ID:id ASSIGN exp:init TO exp:test DO exp:a BREAK ENDFOR:E	 {: RESULT = new ForExp(pos(FORleft,Eright), id, init, test, a, true); :}
+| FOR:FOR ID:id ASSIGN exp:init TO exp:test DO exp:a BREAK exp:b ENDFOR:E	 {: RESULT = new ForExp(pos(FORleft,Eright), id, init, test, a, true); :}
+| FOR:FOR ID:id ASSIGN exp:init TO exp:test DO BREAK ENDFOR:E	 {: RESULT = new ForExp(pos(FORleft,Eright), id, init, test, null, true); :}
+| WHILE:W LPAREN exp:test RPAREN DO exp:a ENDWHILE:E	{: RESULT = new WhileExp(pos(Wleft,Eright), test, a,false); :}
+| WHILE:W LPAREN exp:test RPAREN DO exp:a BREAK ENDWHILE:E	{: RESULT = new WhileExp(pos(Wleft,Eright), test, a,true); :}
+| WHILE:W LPAREN exp:test RPAREN DO exp:a BREAK exp:b ENDWHILE:E	{: RESULT = new WhileExp(pos(Wleft,Eright), test, a,true); :}
+| WHILE:W LPAREN exp:test RPAREN DO BREAK ENDWHILE:E	{: RESULT = new WhileExp(pos(Wleft,Eright), test, null,true); :}
+| ID:f LPAREN expList:es RPAREN:R         {: RESULT = new CallExp(pos(fleft,Rright), f, es); :}
+;
+
+
+var ::=
+  ID:id                                   {: RESULT = new SimpleVar(pos(idleft,idright), id); :}
+  | ID:id LBRACK exp:index RBRACK:r         {: RESULT = new SubscriptVar(pos(idleft,rright), new SimpleVar(pos(idleft,idright), id), index); :}
+  | var:v LBRACK exp:index RBRACK:r         {: RESULT = new SubscriptVar(pos(vleft,rright), v, index); :}
+  | ID:name1 DOT ID:name2				  {: RESULT = new FieldsVar(pos(name1left,name2right),name1,name2); :}
+;
+
+//fieldVarList ::=
+  //ID:name1 DOT ID:name2 fieldVarListRest:es					  {: RESULT = new Lst<Exp>(name1,es)
+//;
+
+expList ::=
+  exp:e expListRest:es                    {: RESULT = new Lst<Exp>(e, es); :}
+|                                         {: RESULT = new Lst<Exp>(); :}
+;
+
+expListRest ::=
+  COMMA exp:e expListRest:es              {: RESULT = new Lst<Exp>(e, es); :}
+|                                         {: RESULT = new Lst<Exp>(); :}
+;
+
+expSeq ::=
+  exp:e expSeqRest:es                     {: RESULT = new Lst<Exp>(e, es); :}
+|                                         {: RESULT = new Lst<Exp>(); :}
+;
+
+expSeq2 ::=
+  exp:x SEMICOLON exp:y expSeqRest:rest   {: RESULT = new Lst<Exp>(x, new Lst<Exp>(y, rest)); :}
+;
+
+expSeqRest ::=
+  SEMICOLON exp:x expSeqRest:rest         {: RESULT = new Lst<Exp>(x, rest); :}
+|                                         {: RESULT = new Lst<Exp>(); :}
+;
+
+namety ::=
+  ID:type                                 {: RESULT = new NameTy(pos(typeleft,typeright), type); :}
+;
+
+constraint ::=
+  COLON namety:type                       {: RESULT = type; :}
+|                                         {: RESULT = null; :}
+;
+
+field ::=
+  ID:name COLON namety:type               {: RESULT = new Field<NameTy>(pos(nameleft,typeright), name, type); :}
+;
+
+fields ::=
+  field:f fieldsRest:fs                   {: RESULT = new Lst<Field<NameTy>>(f, fs); :}
+|                                         {: RESULT = new Lst<Field<NameTy>>(); :}
+;
+
+fieldsRest ::=
+  COMMA field:f fieldsRest:fs             {: RESULT = new Lst<Field<NameTy>>(f, fs); :}
+|                                         {: RESULT = new Lst<Field<NameTy>>(); :}
+;
+
+ty ::=
+  namety:ty                               {: RESULT = ty; :}
+| ARRAY:a OF namety:t                     {: RESULT = new ArrayTy(pos(aleft,tright), t); :}
+| LKEY:x fields:params RKEY:z			  {: RESULT = new RecordTy(pos(xleft,zright), params); :}
+// FIX ME: MISSING RECORDS
+;
+
+varDec ::=
+  VAR:VAR ID:v constraint:c ASSIGN exp:e  {: RESULT = new VarDec(pos(VARleft,eright), v, c, e); :}
+;
+
+functionDec ::=
+  FUNCTION:FUNCTION ID:name LPAREN fields:params RPAREN constraint:result EQ exp:body
+                                          {: RESULT = new FunctionDec(pos(FUNCTIONleft,bodyright), name, params, result, body); :}
+;                                     
+
+functionDecs ::=
+  functionDec:d functionDecs:ds           {: RESULT = new Lst<FunctionDec>(d, ds); :}
+| functionDec:d                           {: RESULT = new Lst<FunctionDec>(d, new Lst<FunctionDec>()); :}
+;
+
+typeDec ::=
+  TYPE:TYPE ID:name EQ ty:ty              {: RESULT = new TypeDec(pos(TYPEleft,tyright), name, ty); :}
+;
+
+typeDecs ::=
+  typeDec:d typeDecs:ds                   {: RESULT = new Lst<TypeDec>(d, ds); :}
+| typeDec:d                               {: RESULT = new Lst<TypeDec>(d, new Lst<TypeDec>()); :}
+;
+
+decList ::=
+  begVarDecList:ds                        {: RESULT = ds; :}
+| begFunctionDecList:ds                   {: RESULT = ds; :}
+| begTypeDecList:ds                       {: RESULT = ds; :}
+;
+
+begVarDecList ::=
+  varDec:d                                {: RESULT = new Lst<Dec>(d, new Lst<Dec>()); :}
+| varDec:d begVarDecList:ds               {: RESULT = new Lst<Dec>(d, ds); :}
+| varDec:d begFunctionDecList:ds          {: RESULT = new Lst<Dec>(d, ds); :}
+| varDec:d begTypeDecList:ds              {: RESULT = new Lst<Dec>(d, ds); :}
+;
+
+begTypeDecList ::=
+  typeDecs:d                              {: RESULT = new Lst<Dec>(new MutualTypeDecs(pos(dleft,dright), d), new Lst<Dec>()); :}
+| typeDecs:d begVarDecList:ds             {: RESULT = new Lst<Dec>(new MutualTypeDecs(pos(dleft,dright), d), ds); :}
+| typeDecs:d begFunctionDecList:ds        {: RESULT = new Lst<Dec>(new MutualTypeDecs(pos(dleft,dright), d), ds); :}
+;
+
+begFunctionDecList ::=
+  functionDecs:d                          {: RESULT = new Lst<Dec>(new MutualFunctionDecs(pos(dleft,dright), d), new Lst<Dec>()); :}
+| functionDecs:d begVarDecList:ds         {: RESULT = new Lst<Dec>(new MutualFunctionDecs(pos(dleft,dright), d), ds); :}
+| functionDecs:d begTypeDecList:ds        {: RESULT = new Lst<Dec>(new MutualFunctionDecs(pos(dleft,dright), d), ds); :}
+;
